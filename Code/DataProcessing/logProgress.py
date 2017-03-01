@@ -1,29 +1,13 @@
-import sys
+import progressbar
+import time
 
-def logProgress(sequence, every=None, size=None, name='Items'):
+def logProgress(sequence):
 
-    is_iterator = False
-    if size is None:
-        try:
-            size = len(sequence)
-        except TypeError:
-            is_iterator = True
-    if size is not None:
-        if every is None:
-            if size <= 200:
-                every = 1
-            else:
-                every = int(size / 200)     # every 0.5%
-    else:
-        assert every is not None, 'sequence is iterator, set every'
+    try:
+        bar = progressbar.ProgressBar(max_value=len(sequence))
+    except TypeError:
+        bar = progressbar.ProgressBar(max_value=progressbar.UnknownLength)
 
-    index = 0
     for index, record in enumerate(sequence, 1):
-        if index == 1 or index % every == 0:
-            if is_iterator:
-            	sys.stdout.write("Loading: " + str(index) + '\r')
-            	sys.stdout.flush()
-            else:
-            	sys.stdout.write("Loading: " + str(index) + " / " + str(size) + '\r')
-            	sys.stdout.flush()
+        bar.update(index)
         yield record
