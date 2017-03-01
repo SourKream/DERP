@@ -1,11 +1,12 @@
 import numpy as np
 import cPickle as pickle
 import random
+from logProgress import *
 
 '''
 	Description : The file builds the ARCmtDataset using the ChildrenDict. The output 
 				  from this file is in comment_name format. To convert the output to 
-				  text_format, use textGenerator.py
+				  text_format, use buildARCmtDatasetText.py
 	Ouput       : ARCmtDataset.txt (Dataset in comment_name format)
 
 '''
@@ -39,9 +40,8 @@ for comment_name in child_dict:
 random.shuffle(random_comments)
 
 ## Extract good and bad pairs
-counter = 0
 useful_comments = []
-for comment_name in child_dict:
+for comment_name in logProgress(child_dict):
 	num_child_comments = len(child_dict[comment_name])
 	if num_child_comments >= 2 and num_child_comments <= 10:
 		curr_dict = {}
@@ -70,9 +70,6 @@ for comment_name in child_dict:
 		curr_dict['context'].append(parent_dict[curr])
 
 		useful_comments.append(curr_dict)
-		counter += 1
-		if counter % 1000000 == 0:
-			print counter 
 
 ## Dump to file
 with open(data_path+'ARCmtDataset.txt','w') as f:
