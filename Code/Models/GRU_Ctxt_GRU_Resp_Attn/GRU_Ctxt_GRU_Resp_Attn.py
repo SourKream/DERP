@@ -158,7 +158,7 @@ class SingleAttentionLayer(Layer):
         else:
             return attended_ctxt
 
-    def get_output_shape_for(self, input_shape):
+    def compute_output_shape(self, input_shape):
         if self.return_att:
             return [(input_shape[0][0], input_shape[0][2]), (input_shape[0][0], input_shape[0][1])]
         else:
@@ -201,10 +201,8 @@ def create_model():
     # attended_alt_ctxt = single_attention(encoded_ctxt, encoded_alt_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
 
     attention_module = SingleAttentionLayer(CTXT_GRU_HIDDEN_STATE, return_att = True)
-    gold_attended = attention_module([encoded_ctxt, encoded_gold_resp])
-    attended_gold_ctxt, gold_alpha = gold_attended[0], gold_attended[1]
-    alt_attended = attention_module([encoded_ctxt, encoded_alt_resp])
-    attended_alt_ctxt, ctxt_alpha = alt_attended[0], alt_attended[1]
+    attended_gold_ctxt, gold_alpha = attention_module([encoded_ctxt, encoded_gold_resp])
+    attended_alt_ctxt, ctxt_alpha = attention_module([encoded_ctxt, encoded_alt_resp])
 
     merged_vector = keras.layers.concatenate([attended_gold_ctxt, attended_alt_ctxt, encoded_gold_resp, encoded_alt_resp], axis=-1)
     merged_vector = Dense(DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
