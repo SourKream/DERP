@@ -1,8 +1,9 @@
 import keras
-from keras.layers import Input, GRU, Embedding, Dense
+from keras.layers import Input, GRU, Embedding, Dense, Activation, Add, RepeatVector, TimeDistributed
 from keras.models import Model
 from keras.layers.wrappers import Bidirectional
 from keras.callbacks import *
+from keras import backend as K
 
 from sklearn.externals import joblib
 
@@ -22,7 +23,7 @@ EMBEDDING_DIM = 300
 DENSE_HIDDEN_STATE = 30
 
 # training details
-TRAIN_SIZE = -1    # -1 => train on all
+TRAIN_SIZE = 10000    # -1 => train on all
 BATCH_SIZE = 256
 
 # hpc file paths
@@ -30,7 +31,7 @@ train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/train
 val_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/val.txt'
 test_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/test.txt'
 count_vect_vocab_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/vocab_50k'
-save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/GRU_Ctxt_GRU_Resp/' + 'CTXT_HIDDEN_STATE_' + str(CTXT_GRU_HIDDEN_STATE) + 'RESP_HIDDEN_STATE_' + str(RESP_GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE_' + str(DENSE_HIDDEN_STATE) + '_BATCH_SIZE_' + str(BATCH_SIZE)
+save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/GRU_Ctx_GRU_Resp_Attn/' + 'GRU_HIDDEN_STATE_' + str(GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE_' + str(DENSE_HIDDEN_STATE) + '_BATCH_SIZE_' + str(BATCH_SIZE)
 load_model_path = ''
 
 # local file paths
@@ -84,8 +85,7 @@ def data_generator(data_x, data_y, vocab_dict, inv_vocab):
             cur_batch_y = [y for i,y in enumerate(cur_batch_y) if len(cur_batch_x[i][0]) <= MAX_CTX_LEN and len(cur_batch_x[i][1])<=MAX_RESP_LEN and len(cur_batch_x[i][2])<=MAX_RESP_LEN]
             cur_batch_x = [x for x in cur_batch_x if len(x[0]) <= MAX_CTX_LEN and len(x[1])<=MAX_RESP_LEN and len(x[2])<=MAX_RESP_LEN]
             cur_batch_ctxt, cur_batch_gold_resp, cur_batch_alt_resp = zip(*cur_batch_x)
-            if len(cur_batch_x) != len(cur_batch_y):
-                continue
+            
             # indices for context, 0 if nothing
             cur_batch_ctxt_vec = np.zeros((len(cur_batch_ctxt), MAX_CTX_LEN))
 
@@ -113,8 +113,14 @@ def data_generator(data_x, data_y, vocab_dict, inv_vocab):
                         cur_batch_alt_resp_vec[j][k] = vocab_dict['UNK']
             
             yield [cur_batch_ctxt_vec, cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
-        
-    
+
+def single_attention(ctxt, resp, ctxt_dense, resp_dense, alpha_dense):
+    pre_alpha = Activation('tanh')(Add([RepeatVector(MAX_CTX_LEN)(resp_dense(resp)), TimeDistributed(ctxt_dense)(ctxt)]))
+    alpha = Activation("softmax")(Flatten()(TimeDistributed(alpha_dense)(pre_alpha)))
+    alpha = Reshape((MAX_CTX_LEN, 1), input_shape=(MAX_CTX_LEN,))(alpha)
+    permuted_ctxt = K.permute_dimensions(ctxt, (0,2,1))
+    return K.T.batched_dot(permuted_ctxt, alpha)
+
 def create_model():
     ctxt = Input(shape=(MAX_CTX_LEN,))
     gold_resp = Input(shape=(MAX_RESP_LEN,))
@@ -125,14 +131,21 @@ def create_model():
     gold_resp_emb = embedding(gold_resp)
     alt_resp_emb = embedding(alt_resp)
 
-    ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE))
+    ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE, return_sequences = True))
     encoded_ctxt = ctxt_gru(ctxt_emb)
 
     shared_gru = Bidirectional(GRU(RESP_GRU_HIDDEN_STATE))
     encoded_gold_resp = shared_gru(gold_resp_emb)
     encoded_alt_resp = shared_gru(alt_resp_emb)
+
+    shared_ctxt_dense = Dense(CTXT_GRU_HIDDEN_STATE)
+    shared_resp_dense = Dense(CTXT_GRU_HIDDEN_STATE)
+    shared_alpha_dense = Dense(1)
+
+    attended_gold_ctxt = single_attention(encoded_ctxt, encoded_gold_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
+    attended_alt_ctxt = single_attention(encoded_ctxt, encoded_alt_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
     
-    merged_vector = keras.layers.concatenate([encoded_ctxt, encoded_gold_resp, encoded_alt_resp], axis=-1)
+    merged_vector = keras.layers.concatenate([attended_gold_ctxt, attended_alt_ctxt, encoded_gold_resp, encoded_alt_resp], axis=-1)
     merged_vector = Dense(DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
     
     predictions = Dense(1, activation='sigmoid')(merged_vector)
@@ -165,6 +178,7 @@ if __name__=='__main__':
     weight_save.model_file = save_model_path
     weight_save.load_model_path = load_model_path
 
-    # model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE, epochs=10)
+    model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE, epochs=10)
     
-    model.fit_generator(train_gen, steps_per_epoch=500, epochs=500, validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[weight_save])
+    # model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE, epochs=10, validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[weight_save])
+
