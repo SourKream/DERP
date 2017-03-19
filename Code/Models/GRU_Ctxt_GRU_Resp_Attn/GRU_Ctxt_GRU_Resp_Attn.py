@@ -4,6 +4,9 @@ from keras.models import Model
 from keras.layers.wrappers import Bidirectional
 from keras.callbacks import *
 from keras import backend as K
+from keras.engine.topology import Layer
+import theano
+import theano.tensor as T
 
 from sklearn.externals import joblib
 
@@ -114,12 +117,65 @@ def data_generator(data_x, data_y, vocab_dict, inv_vocab):
             
             yield [cur_batch_ctxt_vec, cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
 
-def single_attention(ctxt, resp, ctxt_dense, resp_dense, alpha_dense):
-    pre_alpha = Activation('tanh')(add([RepeatVector(MAX_CTX_LEN)(resp_dense(resp)), TimeDistributed(ctxt_dense)(ctxt)]))
-    alpha = Activation("softmax")(Flatten()(TimeDistributed(alpha_dense)(pre_alpha)))
-    alpha = Reshape((MAX_CTX_LEN, 1), input_shape=(MAX_CTX_LEN,))(alpha)
-    permuted_ctxt = K.permute_dimensions(ctxt, (0,2,1))
-    return K.T.batched_dot(permuted_ctxt, alpha)
+class SingleAttentionLayer(Layer):
+    def __init__(self, dense_dim, return_att = False, **kwargs):
+        self.return_att = return_att
+        self.dense_dim = dense_dim
+        super(SingleAttentionLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.ctxt_dim = input_shape[0][2]
+        self.resp_dim = input_shape[1][1]
+        self.ctxt_dense = self.add_weight(shape=(self.ctxt_dim, self.dense_dim), initializer='glorot_uniform', trainable=True) # n_dim x n_dim
+        self.resp_dense = self.add_weight(shape=(self.resp_dim, self.dense_dim), initializer='glorot_uniform', trainable=True) # n_dim x n_dim
+        self.alpha_dense = self.add_weight(shape=(self.dense_dim, 1), initializer='glorot_uniform', trainable=True) # n_dim x 1
+        super(SingleAttentionLayer, self).build(input_shape)
+
+    def call(self, input_tensors, mask = None):
+        ''' wbw attention layer:
+        :param ctxt (input_tensors[0]) : batch_size x T x ctxt_dim
+        :param resp (input_tensors[1]) : batch_size x resp_dim
+        '''
+
+        ctxt = input_tensors[0]
+        resp = input_tensors[1]
+        ctxt_mask = mask[0]
+
+        resp_w = T.dot(resp, self.resp_dense) # bt_sz x dense_dim
+        ctxt_w = T.dot(ctxt, self.ctxt_dense) # bt_sz x T x dense_dim
+        resp_w_rep = resp_w[:,None,:] # bt_sz x T x dense_dim
+        pre_alpha = T.tanh(ctxt_w + resp_w_rep) # bt_sz x T x dense_dim
+        unnorm_alpha = T.dot(pre_alpha, self.alpha_dense).flatten(2) # bt_sz x T
+        if ctxt_mask:
+            unnorm_alpha_masked = unnorm_alpha - 1000 * (1. - ctxt_mask)
+        else:
+            unnorm_alpha_masked = unnorm_alpha
+        alpha = T.nnet.softmax(unnorm_alpha_masked) # bt_sz x T
+        attended_ctxt = T.batched_dot(alpha.dimshuffle((0,'x',1)), ctxt)[:,0,:] # bt_sz x ctxt_dim
+
+        if self.return_att:
+            return [attended_ctxt, alpha]
+        else:
+            return attended_ctxt
+
+    def get_output_shape_for(self, input_shape):
+        if self.return_att:
+            return [(input_shape[0][0], input_shape[0][2]), (input_shape[0][0], input_shape[0][1])]
+        else:
+            return (input_shape[0][0], input_shape[0][2])
+
+    def compute_mask(self, input_tensors, input_masks):
+        if self.return_att:
+            return [None, None]
+        else:
+            return None
+
+# def single_attention(ctxt, resp, ctxt_dense, resp_dense, alpha_dense):
+#     pre_alpha = Activation('tanh')(add([RepeatVector(MAX_CTX_LEN)(resp_dense(resp)), TimeDistributed(ctxt_dense)(ctxt)]))
+#     alpha = Activation("softmax")(Flatten()(TimeDistributed(alpha_dense)(pre_alpha)))
+#     alpha = Reshape((MAX_CTX_LEN, 1), input_shape=(MAX_CTX_LEN,))(alpha)
+#     permuted_ctxt = K.permute_dimensions(ctxt, (0,2,1))
+#     return K.T.batched_dot(permuted_ctxt, alpha)
 
 def create_model():
     ctxt = Input(shape=(MAX_CTX_LEN,))
@@ -138,13 +194,18 @@ def create_model():
     encoded_gold_resp = shared_gru(gold_resp_emb)
     encoded_alt_resp = shared_gru(alt_resp_emb)
 
-    shared_ctxt_dense = Dense(CTXT_GRU_HIDDEN_STATE)
-    shared_resp_dense = Dense(CTXT_GRU_HIDDEN_STATE)
-    shared_alpha_dense = Dense(1)
+    # shared_ctxt_dense = Dense(CTXT_GRU_HIDDEN_STATE)
+    # shared_resp_dense = Dense(CTXT_GRU_HIDDEN_STATE)
+    # shared_alpha_dense = Dense(1)
+    # attended_gold_ctxt = single_attention(encoded_ctxt, encoded_gold_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
+    # attended_alt_ctxt = single_attention(encoded_ctxt, encoded_alt_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
 
-    attended_gold_ctxt = single_attention(encoded_ctxt, encoded_gold_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
-    attended_alt_ctxt = single_attention(encoded_ctxt, encoded_alt_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
-    
+    attention_module = SingleAttentionLayer(CTXT_GRU_HIDDEN_STATE, return_att = True)
+    gold_attended = attention_module([encoded_ctxt, encoded_gold_resp])
+    attended_gold_ctxt, gold_alpha = gold_attended[0], gold_attended[1]
+    alt_attended = attention_module([encoded_ctxt, encoded_alt_resp])
+    attended_alt_ctxt, ctxt_alpha = alt_attended[0], alt_attended[1]
+
     merged_vector = keras.layers.concatenate([attended_gold_ctxt, attended_alt_ctxt, encoded_gold_resp, encoded_alt_resp], axis=-1)
     merged_vector = Dense(DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
     
