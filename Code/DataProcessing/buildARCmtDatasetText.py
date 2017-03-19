@@ -27,13 +27,15 @@ for line in logProgress(open(data_path + "ARCmtDataset.txt"), every=1000):
 print 'Starting with Body Dict Building ...'
 
 def filterByTab(text):
-	return ''.join(filter(lambda x: x!= '\t' and x !='\n', list(text)))
+	return ''.join(filter(lambda x: x!= '\t' and x !='\n', list(text))).strip()
 
 body_dict = {}
 for line in logProgress(open(data_path + 'UsefulComments_NoChildren.txt'), every=1000):
 	line = eval(line)
 	if line['name']	in uid_set:
-		body_dict[line['name']] = filterByTab(line['body'])
+		body_string = filterByTab(line['body'])
+		if body_string != '':
+			body_dict[line['name']] = body_string
 
 ## Pruning rules
 # 1. URL present in comment or context
