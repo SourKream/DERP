@@ -1,5 +1,5 @@
 import keras
-from keras.layers import Input, GRU, Embedding, Dense, Activation, Add, RepeatVector, TimeDistributed
+from keras.layers import Input, GRU, Embedding, Dense, Activation, add, RepeatVector, TimeDistributed, Flatten
 from keras.models import Model
 from keras.layers.wrappers import Bidirectional
 from keras.callbacks import *
@@ -31,7 +31,7 @@ train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/train
 val_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/val.txt'
 test_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/test.txt'
 count_vect_vocab_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/vocab_50k'
-save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/GRU_Ctx_GRU_Resp_Attn/' + 'GRU_HIDDEN_STATE_' + str(GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE_' + str(DENSE_HIDDEN_STATE) + '_BATCH_SIZE_' + str(BATCH_SIZE)
+save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/GRU_Ctxt_GRU_Resp_Attn/' + 'CTXT_HIDDEN_STATE_' + str(CTXT_GRU_HIDDEN_STATE) + 'RESP_HIDDEN_STATE_' + str(RESP_GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE_' + str(DENSE_HIDDEN_STATE) + '_BATCH_SIZE_' + str(BATCH_SIZE)
 load_model_path = ''
 
 # local file paths
@@ -115,7 +115,7 @@ def data_generator(data_x, data_y, vocab_dict, inv_vocab):
             yield [cur_batch_ctxt_vec, cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
 
 def single_attention(ctxt, resp, ctxt_dense, resp_dense, alpha_dense):
-    pre_alpha = Activation('tanh')(Add([RepeatVector(MAX_CTX_LEN)(resp_dense(resp)), TimeDistributed(ctxt_dense)(ctxt)]))
+    pre_alpha = Activation('tanh')(add([RepeatVector(MAX_CTX_LEN)(resp_dense(resp)), TimeDistributed(ctxt_dense)(ctxt)]))
     alpha = Activation("softmax")(Flatten()(TimeDistributed(alpha_dense)(pre_alpha)))
     alpha = Reshape((MAX_CTX_LEN, 1), input_shape=(MAX_CTX_LEN,))(alpha)
     permuted_ctxt = K.permute_dimensions(ctxt, (0,2,1))
