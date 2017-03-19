@@ -30,10 +30,7 @@ train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/train
 val_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/val.txt'
 test_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/test.txt'
 count_vect_vocab_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/vocab_50k'
-save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/GRU_Ctx_GRU_Resp/' + 'GRU_HIDDEN_STATE_' 
-                  + str(GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' 
-                  + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE_' 
-                  + str(DENSE_HIDDEN_STATE) + '_BATCH_SIZE_' + str(BATCH_SIZE)
+save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/GRU_Ctx_GRU_Resp/' + 'GRU_HIDDEN_STATE_' + str(GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE_' + str(DENSE_HIDDEN_STATE) + '_BATCH_SIZE_' + str(BATCH_SIZE)
 load_model_path = ''
 
 # local file paths
@@ -47,6 +44,7 @@ class WeightSave(Callback):
 
     def on_train_begin(self):
         if self.load_model_path:
+            print('LOADING WEIGHTS FROM : ' + self.load_model_path)
             weights = joblib.load(self.load_model_path)
             self.model.set_weights(weights)
 
@@ -82,13 +80,13 @@ def data_generator(data_x, data_y, vocab_dict, inv_vocab):
             cur_batch_x = [[y.lower() for y in x] for x in cur_batch_x]  # !when making vocab all are lower case
             cur_batch_y = data_y[i:i+BATCH_SIZE]
             
-            cur_batch_x = [[x[0],TreebankWordTokenizer().tokenize(x[1]),TreebankWordTokenizer().tokenize(x[2])] for x in cur_batch_x]
-            cur_batch_y = [y for i,y in enumerate(cur_batch_y) if len(cur_batch_x[i][1])<=MAX_RESP_LEN and len(cur_batch_x[i][2])<=MAX_RESP_LEN]
+            cur_batch_x = [[TreebankWordTokenizer().tokenize(x[0]),TreebankWordTokenizer().tokenize(x[1]),TreebankWordTokenizer().tokenize(x[2])] for x in cur_batch_x]
+            cur_batch_y = [y for i,y in enumerate(cur_batch_y) if len(x[0]) <= MAX_CTX_LEN and len(cur_batch_x[i][1])<=MAX_RESP_LEN and len(cur_batch_x[i][2])<=MAX_RESP_LEN]
             cur_batch_x = [x for x in cur_batch_x if len(x[0]) <= MAX_CTX_LEN and len(x[1])<=MAX_RESP_LEN and len(x[2])<=MAX_RESP_LEN]
             cur_batch_ctxt, cur_batch_gold_resp, cur_batch_alt_resp = zip(*cur_batch_x)
             
             # indices for context, 0 if nothing
-            cur_batch_ctxt_vec = np.zeros((len(cur_batch_ctxt_vec), MAX_CTX_LEN))
+            cur_batch_ctxt_vec = np.zeros((len(cur_batch_ctxt), MAX_CTX_LEN))
 
             # indices for responses, 0 if nothing
             cur_batch_gold_resp_vec = np.zeros((len(cur_batch_gold_resp),MAX_RESP_LEN))
@@ -159,7 +157,7 @@ if __name__=='__main__':
     inv_vocab = {vocab_dict[x]:x for x in vocab_dict}
     
     train_gen = data_generator(train_x, train_y, vocab_dict, inv_vocab)
-    val_gen = data_generator(val_x, val_y, vocab_dict, inv_vocab, count_vect, tfidf_transformer)
+    val_gen = data_generator(val_x, val_y, vocab_dict, inv_vocab)
 
     model = create_model()
     weight_save = WeightSave()
@@ -168,6 +166,5 @@ if __name__=='__main__':
 
     model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE, epochs=10)
     
-    model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE, epochs=10, 
-                        validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[weight_save])
+    model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE, epochs=10, validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[weight_save])
 
