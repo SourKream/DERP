@@ -16,40 +16,37 @@ file_names = ['NewPrunedDataset/ARCmtDataset_test.txt','NewPrunedDataset/ARCmtDa
 print 'Starting with ARTCmtDataset Now ...'
 
 idx_data = {}
-uid_set = set([])
 for input_file_name in file_names:
-	idx_data[input_file_name] = []
-	for line in logProgress(open(data_path + input_file_name)):
-		line = line.split('\t')
-		line[0] = eval(line[0])
-		uid_set.update(line[0])
-		uid_set.add(line[1])
-		uid_set.add(line[2])
-		idx_data[input_file_name].append(line)
+	all_data_points = open(data_path + input_file_name).readlines()
+	for i in logProgress(xrange(len(all_data_points))):
+		all_data_points[i] = all_data_points[i].split('\t')
+		all_data_points[i][0] = eval(all_data_points[i][0])
+	idx_data[input_file_name] = all_data_points[i]
 
 ## Make body dict
 print 'Starting with Body Dict Building ...'
 
-def filterByTab(text):
-	return ''.join(filter(lambda x: x!= '\t' and x !='\n', list(text))).strip()
+def IgnoreBody(body):
+	body = body.lower()
+	if "http" in body or "www" in body or "reddit" in body:
+		return True
+	return False
 
 body_dict = {}
-for line in logProgress(open(data_path + 'UsefulComments_NoChildren.txt')):
-	line = eval(line)
-	if line['name']	in uid_set:
-		body_string = filterByTab(line['body'])
-		if body_string != '':
-			body_dict[line['name']] = body_string
+all_comments = open(data_path + 'UsefulComments_NoChildren.txt').readlines()
+for i in logProgress(xrange(len(all_comments))):
+	all_comments[i] = eval(all_comments[i])
+	body_string = all_comments[i]['body'].translate(None, '\t\n\r').strip()
+	if body_string == '' or IgnoreBody(body_string):
+		continue
+	body_dict[all_comments[i]['name']] = body_string
+del all_comments
 
 ## Pruning rules
 # 1. URL present in comment or context
-# 2. Comment with length >= 40
+# 2. Comment with length >= 50
 # 3. Comment with length <= 3
-
-def URLPresent(body):
-	if "http" in body or "www" in body:
-		return True
-	return False
+# 4. 'reddit' present in body
 
 def tokenize(sent):
     ## Add exception regex enclosed in ()
@@ -84,20 +81,15 @@ for output_file_name in file_names:
 	with open(data_path+output_file_name,'w') as f:
 		for comment in logProgress(idx_data[output_file_name]):
 			buf = ""
-			for context_id in comment[0]:
+			for context_id in comment[0][::-1]:
 				if context_id in body_dict:
-					if URLPresent(body_dict[context_id]):
-						continue
 					buf += DELIMITER + ' ' + body_dict[context_id]
-			if buf == "": 
+			if buf == "":
 				continue
 			if comment[1] in body_dict and comment[2] in body_dict:
-				if URLPresent(body_dict[comment[1]]) or URLPresent(body_dict[comment[2]]):
-					continue
-
 				len_resp_1 = len(tokenize(body_dict[comment[1]]))
 				len_resp_2 = len(tokenize(body_dict[comment[1]]))
-				if len_resp_1 >= 50 or len_resp_2 >= 40:
+				if len_resp_1 >= 50 or len_resp_2 >= 50:
 					continue
 				if len_resp_1 <= 3 or len_resp_2 <= 3:
 					continue
