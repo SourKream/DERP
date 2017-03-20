@@ -12,6 +12,7 @@ from logProgress import *
 '''
 
 data_path = "/home/cse/dual/cs5130275/scratch/DERP/Reddit/"
+output_file_name = 'NewPrunedDataset/ARCmtDataset.txt'
 
 ## Functions
 def getPermutationPairs(num):
@@ -37,7 +38,9 @@ for i in range(2, 11):
 random_comments = []
 for comment_name in child_dict:
 	random_comments.extend(child_dict[comment_name])
+random_comments.extend(child_dict.keys())
 random.shuffle(random_comments)
+curr_random = 0
 
 ## Extract good and bad pairs
 useful_comments = []
@@ -57,22 +60,22 @@ for comment_name in logProgress(child_dict):
 		curr_dict['false_child_pairs'] = []
 		for pair in selected_pairs[num_child_comments]:
 			gold_child = child_dict[comment_name][pair[0]]
-			bad_child = random_comments.pop()
+			bad_child = random_comments[curr_random]
+			curr_random = (curr_random+1)%len(random_comments)
 			curr_dict['false_child_pairs'].append((gold_child, bad_child))
 
 		## Find entire context
 		curr_dict['context'] = []
 		curr = comment_name
-		while curr in parent_dict and parent_dict[curr] != link_id[curr]:
+		while curr in parent_dict:
 			curr_dict['context'].append(curr)
 			curr = parent_dict[curr]
 		curr_dict['context'].append(curr)
-		curr_dict['context'].append(parent_dict[curr])
 
 		useful_comments.append(curr_dict)
 
 ## Dump to file
-with open(data_path+'ARCmtDataset.txt','w') as f:
+with open(data_path+output_file_name,'w') as f:
 	for comment in useful_comments:
 		for pair in comment['true_child_pairs']:
 			f.write(str(comment['context'])+'\t')
