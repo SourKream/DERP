@@ -3,12 +3,11 @@ from keras.layers import Input, GRU, Embedding, Dense
 from keras.models import Model
 from keras.callbacks import Callback
 from keras.layers.wrappers import Bidirectional
-
-from sklearn.externals import joblib
-
 from nltk.tokenize import TreebankWordTokenizer
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.externals import joblib
+from my_utils import *
 import numpy as np
 import pdb
 
@@ -37,25 +36,6 @@ load_model_path = ''
 # count_vect_vocab_file = '../LogisticRegBaseline/vocab_50k'
 # tfidf_transformer_file = '../LogisticRegBaseline/tfidf_transformer_50k'
 
-def load_data(filename, num_dat_points=-1):
-    f = open(filename, 'rt')
-    
-    if num_dat_points==-1:
-        dat = f.readlines()
-    else:
-        dat = []
-        for i in range(num_dat_points):
-            dat.append(f.readline().strip())
-            
-    f.close()
-    
-    dat = [x.split('\t') for x in dat]
-    assert(all([len(x)==4 for x in dat]))
-    dat_x = [x[:3] for x in dat]
-    dat_y = [int(x[3]) for x in dat]
-    
-    return dat_x, dat_y
-
 class WeightSave(Callback):
     def setModelFile(self, model_file):
         self.model_file = model_file
@@ -67,45 +47,7 @@ class WeightSave(Callback):
     def on_epoch_end(self, epochs, logs={}):
         cur_weights = self.model.get_weights()
         joblib.dump(cur_weights, self.model_file + '_on_epoch_' + str(epochs) + '.weights')
- 
-def data_generator(data_x, data_y, vocab_dict, inv_vocab, count_vect, tfidf_transformer):
-    assert(0 not in inv_vocab)  # 0 is for masking
-    
-    while True:
-        for i in range(0, len(data_x), BATCH_SIZE):
-            cur_batch_x = data_x[i:i+BATCH_SIZE]
-            cur_batch_x = [[y.lower() for y in x] for x in cur_batch_x]  # !when making vocab all are lower case
-            cur_batch_y = data_y[i:i+BATCH_SIZE]
-            
-            cur_batch_x = [[x[0],TreebankWordTokenizer().tokenize(x[1]),TreebankWordTokenizer().tokenize(x[2])] for x in cur_batch_x]
-            cur_batch_y = [y for i,y in enumerate(cur_batch_y) if len(cur_batch_x[i][1])<=MAX_RESP_LEN and len(cur_batch_x[i][2])<=MAX_RESP_LEN]
-            cur_batch_x = [x for x in cur_batch_x if len(x[1])<=MAX_RESP_LEN and len(x[2])<=MAX_RESP_LEN]
-            cur_batch_ctxt, cur_batch_gold_resp, cur_batch_alt_resp = zip(*cur_batch_x)
-            
-            # tfidf for context
-            cur_batch_ctxt = count_vect.transform(cur_batch_ctxt)
-            cur_batch_ctxt = tfidf_transformer.transform(cur_batch_ctxt)
-            
-            # indices for responses, 0 if nothing
-            cur_batch_gold_resp_vec = np.zeros((len(cur_batch_gold_resp),MAX_RESP_LEN))
-            cur_batch_alt_resp_vec = np.zeros((len(cur_batch_gold_resp),MAX_RESP_LEN))
-            
-            for j in range(len(cur_batch_gold_resp)):
-                for k in range(len(cur_batch_gold_resp[j])):
-                    if cur_batch_gold_resp[j][k] in vocab_dict:
-                        cur_batch_gold_resp_vec[j][k] = vocab_dict[cur_batch_gold_resp[j][k]]
-                    else:
-                        cur_batch_gold_resp_vec[j][k] = vocab_dict['UNK']
-            
-                for k in range(len(cur_batch_alt_resp[j])):
-                    if cur_batch_alt_resp[j][k] in vocab_dict:
-                        cur_batch_alt_resp_vec[j][k] = vocab_dict[cur_batch_alt_resp[j][k]]
-                    else:
-                        cur_batch_alt_resp_vec[j][k] = vocab_dict['UNK']
-            
-            yield [cur_batch_ctxt.todense(), cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
-        
-    
+
 def create_model():
     ctxt_tfidf = Input(shape=(VOCAB_SIZE,))
     gold_resp = Input(shape=(MAX_RESP_LEN,))
