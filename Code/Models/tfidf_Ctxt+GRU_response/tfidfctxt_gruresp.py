@@ -23,9 +23,9 @@ TRAIN_SIZE = -1    # -1 => train on all
 BATCH_SIZE = 256
 
 # hpc file paths
-train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/train.txt'
-val_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/val.txt'
-test_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetWithPruning7M/test.txt'
+train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train.txt'
+val_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/val.txt'
+test_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/test.txt'
 count_vect_vocab_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/vocab_50k'
 tfidf_transformer_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/tfidf_transformer_50k'
 save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/tfidf_Ctxt+GRU_response/' + 'GRU_HIDDEN_STATE_' + str(GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE_' + str(DENSE_HIDDEN_STATE) + '_BATCH_SIZE_' + str(BATCH_SIZE)
@@ -84,7 +84,7 @@ if __name__=='__main__':
     
     # prepare vocab, count_vect
     assert(len(count_vect_vocab)==VOCAB_SIZE)
-    count_vect = CountVectorizer(tokenizer=TreebankWordTokenizer().tokenize)
+    count_vect = CountVectorizer(tokenizer=my_tokenizeDatasetNewPruned11M)
     count_vect.vocabulary_ = count_vect_vocab
     vocab_dict = {x:i+1 for i,x in enumerate(count_vect_vocab)}     # +1 since 0 is for masking
     vocab_dict['UNK'] = len(vocab_dict)+1
