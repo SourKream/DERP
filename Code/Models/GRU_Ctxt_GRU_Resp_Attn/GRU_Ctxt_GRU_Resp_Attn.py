@@ -113,7 +113,8 @@ def create_model():
     predictions = Dense(1, activation='sigmoid')(merged_vector)
     
     model = Model(inputs=[ctxt, gold_resp, alt_resp], outputs=predictions)
-    model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy'])
+    adam = Adam(clipnorm=1.)
+    model.compile(optimizer=adam,loss='binary_crossentropy',metrics=['accuracy'])
     model.summary()
     
     return model
