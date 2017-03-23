@@ -7,6 +7,7 @@ MAX_CTX_LEN = 500
 EMBEDDING_DIM = 300
 DENSE_HIDDEN_STATE = 100
 DROPOUT = 0.3
+use_attention = False
 
 # training details
 TRAIN_SIZE = -1    # -1 => train on all

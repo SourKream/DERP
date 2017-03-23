@@ -3,7 +3,11 @@ from keras.layers import Input, GRU, Embedding, Dense, Dropout
 from keras.models import Model
 from keras.layers.wrappers import Bidirectional
 from keras.callbacks import *
+from keras import backend as K
+from keras.engine.topology import Layer
 from keras.optimizers import *
+import theano
+import theano.tensor as T
 
 from configurations import *
 from utils import *
@@ -17,6 +21,59 @@ import pdb
 
 import sys
 
+class SingleAttentionLayer(Layer):
+    def __init__(self, dense_dim, return_att = False, **kwargs):
+        self.return_att = return_att
+        self.dense_dim = dense_dim
+        super(SingleAttentionLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.ctxt_dim = input_shape[0][2]
+        self.resp_dim = input_shape[1][1]
+        self.ctxt_dense = self.add_weight(shape=(self.ctxt_dim, self.dense_dim), initializer='glorot_uniform', trainable=True) # n_dim x n_dim
+        self.resp_dense = self.add_weight(shape=(self.resp_dim, self.dense_dim), initializer='glorot_uniform', trainable=True) # n_dim x n_dim
+        self.alpha_dense = self.add_weight(shape=(self.dense_dim, 1), initializer='glorot_uniform', trainable=True) # n_dim x 1
+        super(SingleAttentionLayer, self).build(input_shape)
+
+    def call(self, input_tensors, mask = None):
+        ''' wbw attention layer:
+        :param ctxt (input_tensors[0]) : batch_size x T x ctxt_dim
+        :param resp (input_tensors[1]) : batch_size x resp_dim
+        '''
+
+        ctxt = input_tensors[0]
+        resp = input_tensors[1]
+        ctxt_mask = mask[0]
+
+        resp_w = T.dot(resp, self.resp_dense) # bt_sz x dense_dim
+        ctxt_w = T.dot(ctxt, self.ctxt_dense) # bt_sz x T x dense_dim
+        resp_w_rep = resp_w[:,None,:] # bt_sz x T x dense_dim
+        pre_alpha = T.tanh(ctxt_w + resp_w_rep) # bt_sz x T x dense_dim
+        unnorm_alpha = T.dot(pre_alpha, self.alpha_dense).flatten(2) # bt_sz x T
+        if ctxt_mask:
+            unnorm_alpha_masked = unnorm_alpha - 1000 * (1. - ctxt_mask)
+        else:
+            unnorm_alpha_masked = unnorm_alpha
+        alpha = T.nnet.softmax(unnorm_alpha_masked) # bt_sz x T
+        attended_ctxt = T.batched_dot(alpha.dimshuffle((0,'x',1)), ctxt)[:,0,:] # bt_sz x ctxt_dim
+
+        if self.return_att:
+            return [attended_ctxt, alpha]
+        else:
+            return attended_ctxt
+
+    def compute_output_shape(self, input_shape):
+        if self.return_att:
+            return [(input_shape[0][0], input_shape[0][2]), (input_shape[0][0], input_shape[0][1])]
+        else:
+            return (input_shape[0][0], input_shape[0][2])
+
+    def compute_mask(self, input_tensors, input_masks):
+        if self.return_att:
+            return [None, None]
+        else:
+            return None
+
 def create_model():
     ctxt = Input(shape=(MAX_CTX_LEN,))
     alt_resp = Input(shape=(MAX_RESP_LEN,))
@@ -25,13 +82,21 @@ def create_model():
     ctxt_emb = embedding(ctxt)
     alt_resp_emb = embedding(alt_resp)
 
-    ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE))
+    if use_attention:
+        ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE, return_sequences = True))
+    else:
+        ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE))
     encoded_ctxt = ctxt_gru(ctxt_emb)
 
     resp_gru = Bidirectional(GRU(RESP_GRU_HIDDEN_STATE))
     encoded_alt_resp = resp_gru(alt_resp_emb)
-    
-    merged_vector = keras.layers.concatenate([encoded_ctxt, encoded_alt_resp], axis=-1)
+
+    if use_attention:
+        attention_module = SingleAttentionLayer(CTXT_GRU_HIDDEN_STATE, return_att = True)
+        attended_alt_ctxt, ctxt_alpha = attention_module([encoded_ctxt, encoded_alt_resp])
+        merged_vector = keras.layers.concatenate([attended_alt_ctxt, encoded_alt_resp], axis=-1)
+    else:
+        merged_vector = keras.layers.concatenate([encoded_ctxt, encoded_alt_resp], axis=-1)
     if DROPOUT > 0.0:
     	merged_vector = Dropout(DROPOUT)(merged_vector)
     merged_vector = Dense(DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
