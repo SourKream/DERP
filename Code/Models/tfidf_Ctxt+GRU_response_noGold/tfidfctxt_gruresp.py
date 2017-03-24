@@ -17,19 +17,16 @@ import pdb
 
 def create_model():
     ctxt_tfidf = Input(shape=(VOCAB_SIZE,))
-    gold_resp = Input(shape=(MAX_RESP_LEN,))
     alt_resp = Input(shape=(MAX_RESP_LEN,))
     embedding = Embedding(output_dim=EMBEDDING_DIM, input_dim=VOCAB_SIZE+2, input_length=MAX_RESP_LEN, mask_zero=True)   # +1 for 'UNK', +1 for mask (0 can't be used)
     
-    gold_resp_emb = embedding(gold_resp)
     alt_resp_emb = embedding(alt_resp)
     
     shared_gru = Bidirectional(GRU(GRU_HIDDEN_STATE, dropout=DROPOUT))
     
-    encoded_gold_resp = shared_gru(gold_resp_emb)
     encoded_alt_resp = shared_gru(alt_resp_emb)
     
-    merged_vector = keras.layers.concatenate([ctxt_tfidf, encoded_gold_resp, encoded_alt_resp], axis=-1)
+    merged_vector = keras.layers.concatenate([ctxt_tfidf, encoded_alt_resp], axis=-1)
     merged_vector = Dropout(DROPOUT)(merged_vector)
     merged_vector = Dense(DENSE_HIDDEN_STATE1, activation='relu')(merged_vector)
     merged_vector = Dropout(DROPOUT)(merged_vector)
@@ -38,7 +35,7 @@ def create_model():
         
     predictions = Dense(1, activation='sigmoid')(merged_vector)
     
-    model = Model(inputs=[ctxt_tfidf, gold_resp, alt_resp], outputs=predictions)
+    model = Model(inputs=[ctxt_tfidf, alt_resp], outputs=predictions)
     model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy'])
     model.summary()
     
@@ -54,8 +51,6 @@ if __name__=='__main__':
     
     # preprocessed data loads
     train_ctxt_tfidfed = load_sparse_csr(train_ctxt_tfidfed_file)
-    with contextlib.closing(bz2.BZ2File(train_gold_resp_preprocessed_file, 'rb')) as f:
-        train_gold_resp_preprocessed = json.load(f)
     with contextlib.closing(bz2.BZ2File(train_alt_resp_preprocessed_file, 'rb')) as f:
         train_alt_resp_preprocessed = json.load(f)
     
@@ -71,7 +66,7 @@ if __name__=='__main__':
     
     # generators
     # train_gen = data_generator_raw(train_x, train_y, vocab_dict, count_vect, tfidf_transformer)
-    train_gen = data_generator_preprocessed(train_ctxt_tfidfed, train_gold_resp_preprocessed, train_alt_resp_preprocessed, train_y)
+    train_gen = data_generator_preprocessed(train_ctxt_tfidfed, train_alt_resp_preprocessed, train_y)
     val_gen = data_generator_raw(val_x, val_y, vocab_dict, count_vect, tfidf_transformer)
     
     # model/callbacks
