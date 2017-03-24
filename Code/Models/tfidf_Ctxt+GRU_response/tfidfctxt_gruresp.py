@@ -8,6 +8,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.externals import joblib
 from my_utils import *
 import cPickle as cp
+import bz2,json,contextlib
 import numpy as np
 import pdb
 
@@ -29,9 +30,9 @@ train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train.
 val_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/val.txt'
 test_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/test.txt'
 train_ctxt_tfidfed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_ctxt_count_vect_tfidfed.pkl'
-train_ctxt_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_ctxt_idxd.pkl'
-train_gold_resp_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_gold_resp_idxd.pkl'
-train_alt_resp_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_alt_resp_idxd.pkl'
+train_ctxt_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_ctxt_idxd.json.bz2'
+train_gold_resp_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_gold_resp_idxd.json.bz2'
+train_alt_resp_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_alt_resp_idxd.json.bz2'
 count_vect_vocab_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/vocab_50k'
 tfidf_transformer_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/tfidf_transformer_50k'
 model_name = 'GRU_HIDDEN_STATE_' + str(GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE1_' + str(DENSE_HIDDEN_STATE1) + '_DENSE_HIDDEN_STATE2_' + str(DENSE_HIDDEN_STATE2) + '_DROPOUT_' + str(DROPOUT) + '_BATCH_SIZE_' + str(BATCH_SIZE)                  
@@ -85,10 +86,10 @@ if __name__=='__main__':
     # preprocessed data loads
     with open(train_ctxt_tfidfed_file,'r') as f:
         train_ctxt_tfidfed = cp.load(f)
-    with open(train_gold_resp_preprocessed_file, 'r') as f:
-        train_gold_resp_preprocessed = cp.load(f)
-    with open(train_alt_resp_preprocessed_file, 'r') as f:
-        train_alt_resp_preprocessed = cp.load(f)    
+    with contextlib.closing(bz2.BZ2File(train_gold_resp_preprocessed_file, 'rb')) as f:
+        train_gold_resp_preprocessed = json.load(f)
+    with contextlib.closing(bz2.BZ2File(train_alt_resp_preprocessed_file, 'rb')) as f:
+        train_alt_resp_preprocessed = json.load(f)
     
     print('loaded data!')
     
