@@ -5,6 +5,7 @@ from keras.layers.wrappers import Bidirectional
 from keras.callbacks import *
 from keras import backend as K
 from keras.engine.topology import Layer
+from keras.optimizers import *
 import theano
 import theano.tensor as T
 
@@ -84,6 +85,8 @@ def create_model():
     embedding = Embedding(output_dim=EMBEDDING_DIM, input_dim=VOCAB_SIZE+2, mask_zero=True)   # +1 for 'UNK', +1 for mask (0 can't be used)
     
     ctxt_emb = embedding(ctxt)
+
+
     gold_resp_emb = embedding(gold_resp)
     alt_resp_emb = embedding(alt_resp)
 
@@ -146,7 +149,36 @@ if __name__=='__main__':
         model.set_weights(joblib.load(load_model_path))
 
         print 'Testing ...'
-        print model.evaluate_generator(test_gen, steps = len(test_x)/BATCH_SIZE)
+        probs = model.predict_generator(test_gen, steps = len(test_x)/BATCH_SIZE).flatten()
+        y = np.array(test_y)[:len(probs)]
+        pred = np.floor(probs + 0.5)
+        f = open(save_pred_path + 'preds.pkl', 'w')
+        cPickle.dump(y, f)
+        cPickle.dump(probs, f)
+        cPickle.dump(pred, f)
+
+        from sklearn.metrics import *
+        import matplotlib.pyplot as plt
+
+        accuracy = accuracy_score(y, pred)
+        precision, recall, f_score, support = precision_recall_fscore_support(y, pred, average = 'binary')
+        confusion_matrix = confusion_matrix(y, pred)
+        print 'Accuracy: ' + str(accuracy)
+        print 'Precision: ' + str(precision)
+        print 'Recall: ' + str(recall)
+        print 'F-Score: ' + str(f_score)
+        print confusion_matrix
+        precs, recs, thresholds = precision_recall_curve(y, probs)
+
+        plt.clf()
+        plt.plot(recall, precision, lw=2, color='navy', label='Precision-Recall curve')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.ylim([0.0, 1.05])
+        plt.xlim([0.0, 1.0])
+        plt.title('Precision-Recall Curve')
+        plt.legend(loc = 'lower left')
+        plt.savefig(save_pred_path + 'pr_curve.png')
 
     else:
         train_x, train_y = load_data(train_file, TRAIN_SIZE)
