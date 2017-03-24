@@ -1,6 +1,7 @@
 from keras.preprocessing.sequence import pad_sequences
 from collections import Counter
 from tfidfctxt_gruresp import *
+from config import *
 import numpy as np
 import re
 import pdb
@@ -82,3 +83,46 @@ def data_generator_preprocessed(data_ctxt_tfidfed, data_gold_resp_preprocessed, 
             cur_batch_alt_resp_vec = pad_sequences(cur_batch_alt_resp_pp, maxlen=MAX_RESP_LEN, value=0, padding='post', truncating='post')
             
             yield [cur_batch_ctxt_tfidfed.todense(), cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
+    
+            
+def test_routine(model):
+    assert load_model_path != ''
+
+    print 'Loading Data ...'
+    test_x, test_y = load_data_raw(test_file, -1)
+    test_gen = data_generator_raw(test_x, test_y, vocab_dict)
+    print 'Restoring Weights ...'
+    model.set_weights(joblib.load(load_model_path))
+
+    print 'Testing ...'
+    probs = model.predict_generator(test_gen, steps = len(test_x)/BATCH_SIZE).flatten()
+    y = np.array(test_y)[:len(probs)]
+    pred = np.floor(probs + 0.5)
+    f = open(save_pred_path + 'preds_' + model_name + '.pkl', 'w')
+    cPickle.dump(y, f)
+    cPickle.dump(probs, f)
+    cPickle.dump(pred, f)
+
+    from sklearn.metrics import *
+    import matplotlib.pyplot as plt
+
+    accuracy = accuracy_score(y, pred)
+    precision, recall, f_score, support = precision_recall_fscore_support(y, pred, average = 'binary')
+    confusion_matrix = confusion_matrix(y, pred)
+    print 'Accuracy: ' + '%.2f' % accuracy
+    print 'Precision: ' + '%.2f' % precision
+    print 'Recall: ' + '%.2f' % recall
+    print 'F-Score: ' + '%.2f' % f_score
+    print confusion_matrix
+    precs, recs, thresholds = precision_recall_curve(y, probs)
+
+    plt.clf()
+    plt.plot(recs, precs, lw=2, color='navy', label='Precision-Recall curve')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.ylim([0.0, 1.05])
+    plt.xlim([0.0, 1.0])
+    plt.title('Precision-Recall Curve')
+    plt.legend(loc = 'lower left')
+    plt.savefig(save_pred_path + 'pr_curve_' + model_name + '.png')
+    
