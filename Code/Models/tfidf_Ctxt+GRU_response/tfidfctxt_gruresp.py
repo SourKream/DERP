@@ -1,12 +1,13 @@
 import keras
 from keras.layers import Input, GRU, Embedding, Dense, Dropout
 from keras.models import Model
-from keras.callbacks import Callback
+from keras.callbacks import ModelCheckpoint
 from keras.layers.wrappers import Bidirectional
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.externals import joblib
 from my_utils import *
+import cPickle as cp
 import numpy as np
 import pdb
 
@@ -15,20 +16,27 @@ GRU_HIDDEN_STATE = 300
 VOCAB_SIZE = 50000    # 1 for UNK
 MAX_RESP_LEN = 50
 EMBEDDING_DIM = 300
-DENSE_HIDDEN_STATE = 100
+DENSE_HIDDEN_STATE1 = 300
+DENSE_HIDDEN_STATE2 = 100
 
 # training details
 TRAIN_SIZE = -1    # -1 => train on all
 BATCH_SIZE = 512
-DROPOUT = 0.3
+DROPOUT = 0.1
 
 # hpc file paths
 train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train.txt'
 val_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/val.txt'
 test_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/test.txt'
+train_ctxt_tfidfed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_ctxt_count_vect_tfidfed.pkl'
+train_ctxt_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_ctxt_idxd.pkl'
+train_gold_resp_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_gold_resp_idxd.pkl'
+train_alt_resp_preprocessed_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train_alt_resp_idxd.pkl'
 count_vect_vocab_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/vocab_50k'
 tfidf_transformer_file = '/home/cse/dual/cs5130275/DERP/Code/Models/LogisticRegBaseline/tfidf_transformer_50k'
-save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/tfidf_Ctxt+GRU_response/' + 'GRU_HIDDEN_STATE_' + str(GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE_' + str(DENSE_HIDDEN_STATE) + '_DROPOUT_' + str(DROPOUT) + '_BATCH_SIZE_' + str(BATCH_SIZE)
+model_name = 'GRU_HIDDEN_STATE_' + str(GRU_HIDDEN_STATE) + '_VOCAB_SIZE_' + str(VOCAB_SIZE) + '_MAX_RESP_LEN_' + str(MAX_RESP_LEN) + '_EMBEDDING_DIM_' + str(EMBEDDING_DIM) + '_DENSE_HIDDEN_STATE1_' + str(DENSE_HIDDEN_STATE1) + '_DENSE_HIDDEN_STATE2_' + str(DENSE_HIDDEN_STATE2) + '_DROPOUT_' + str(DROPOUT) + '_BATCH_SIZE_' + str(BATCH_SIZE)                  
+save_model_path = '/scratch/cse/dual/cs5130275/DERP/Models/tfidf_Ctxt+GRU_response/' + model_name + '.weights.hdf5'                                                     
+
 load_model_path = ''
 
 # local file paths
@@ -36,18 +44,6 @@ load_model_path = ''
 # val_file = 'train100.txt'
 # count_vect_vocab_file = '../LogisticRegBaseline/vocab_50k'
 # tfidf_transformer_file = '../LogisticRegBaseline/tfidf_transformer_50k'
-
-class WeightSave(Callback):
-    def setModelFile(self, model_file):
-        self.model_file = model_file
-    def on_train_begin(self, logs={}):
-        if load_model_path:
-            print('LOADING WEIGHTS FROM : ' + load_model_path)
-            weights = joblib.load(load_model_path)
-            self.model.set_weights(weights)
-    def on_epoch_end(self, epochs, logs={}):
-        cur_weights = self.model.get_weights()
-        joblib.dump(cur_weights, self.model_file + '_on_epoch_' + str(epochs) + '.weights')
 
 def create_model():
     ctxt_tfidf = Input(shape=(VOCAB_SIZE,))
@@ -65,7 +61,9 @@ def create_model():
     
     merged_vector = keras.layers.concatenate([ctxt_tfidf, encoded_gold_resp, encoded_alt_resp], axis=-1)
     merged_vector = Dropout(DROPOUT)(merged_vector)
-    merged_vector = Dense(DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
+    merged_vector = Dense(DENSE_HIDDEN_STATE1, activation='relu')(merged_vector)
+    merged_vector = Dropout(DROPOUT)(merged_vector)
+    merged_vector = Dense(DENSE_HIDDEN_STATE2, activation='tanh')(merged_vector)
     merged_vector = Dropout(DROPOUT)(merged_vector)
         
     predictions = Dense(1, activation='sigmoid')(merged_vector)
@@ -79,10 +77,19 @@ def create_model():
 if __name__=='__main__':
     
     # loads
-    train_x, train_y = load_data(train_file, TRAIN_SIZE)
-    val_x, val_y = load_data(val_file, 10000)
+    train_x, train_y = load_data_raw(train_file, TRAIN_SIZE)
+    val_x, val_y = load_data_raw(val_file, 50000)
     count_vect_vocab = joblib.load(count_vect_vocab_file)
     tfidf_transformer = joblib.load(tfidf_transformer_file)
+    
+    # preprocessed data loads
+    with open(train_ctxt_tfidfed_file,'r') as f:
+        train_ctxt_tfidfed = cp.load(f)
+    with open(train_gold_resp_preprocessed_file, 'r') as f:
+        train_gold_resp_preprocessed = cp.load(f)
+    with open(train_alt_resp_preprocessed_file, 'r') as f:
+        train_alt_resp_preprocessed = cp.load(f)    
+    
     print('loaded data!')
     
     # prepare vocab, count_vect
@@ -94,13 +101,14 @@ if __name__=='__main__':
     inv_vocab = {vocab_dict[x]:x for x in vocab_dict}
     
     # generators
-    train_gen = data_generator(train_x, train_y, vocab_dict, count_vect, tfidf_transformer)
-    val_gen = data_generator(val_x, val_y, vocab_dict, count_vect, tfidf_transformer)
+    # train_gen = data_generator_raw(train_x, train_y, vocab_dict, count_vect, tfidf_transformer)
+    train_gen = data_generator_preprocessed(train_ctxt_tfidfed, train_gold_resp_preprocessed, train_alt_resp_preprocessed, train_y)
+    val_gen = data_generator_raw(val_x, val_y, vocab_dict, count_vect, tfidf_transformer)
     
     # model/callbacks
     model = create_model()
-    weight_save = WeightSave()
-    weight_save.setModelFile(save_model_path)
+    checkpointer = ModelCheckpoint(filepath=save_model_path, verbose=1, save_best_only=True)
     
     # train!
-    model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE/10, epochs=10*10, validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[weight_save]) 
+    print('training ' + model_name)
+    model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE/10, epochs=10*10, validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[checkpointer]) 

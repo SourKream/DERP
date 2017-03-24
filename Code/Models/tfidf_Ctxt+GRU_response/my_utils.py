@@ -20,7 +20,7 @@ def map_to_txt(x, vocab):
 def inverse_map(vocab):
     return {vocab[item]: item for item in vocab}
 
-def load_data(filename, num_dat_points=-1):
+def load_data_raw(filename, num_dat_points=-1):
     with open(filename,'rt') as f:    
         if num_dat_points==-1:
             dat = f.readlines()
@@ -38,7 +38,7 @@ def load_data(filename, num_dat_points=-1):
     
     return dat_x, dat_y
 
-def data_generator(data_x, data_y, vocab_dict, count_vect, tfidf_transformer):
+def data_generator_raw(data_x, data_y, vocab_dict, count_vect, tfidf_transformer):
     assert(0 not in inverse_map(vocab_dict))  # 0 is for masking
     
     while True:
@@ -62,3 +62,23 @@ def data_generator(data_x, data_y, vocab_dict, count_vect, tfidf_transformer):
             
             yield [cur_batch_ctxt.todense(), cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
 
+def data_generator_preprocessed(data_ctxt_tfidfed, data_gold_resp_preprocessed, data_alt_resp_preprocessed, data_y):
+    """
+    data_ctxt_tfidfed : N x len(vocab) sparse vector of count vectorized + tfidf_transformed context 
+    data_gold_resp_preprocessed : array of length N where each item is a list of indexes obtained by tokenizing+indexing gold responses
+    data_alt_resp_preprocessed : array of length N where each item is a list of indexes obtained by tokenizing+indexing alt responses
+    
+    padding is required for responses.
+    """
+    
+    while True:
+        for i in range(0, len(data_y), BATCH_SIZE):
+            cur_batch_ctxt_tfidfed = data_ctxt_tfidfed[i:i+BATCH_SIZE]
+            cur_batch_gold_resp_pp = data_gold_resp_preprocessed[i:i+BATCH_SIZE]
+            cur_batch_alt_resp_pp = data_alt_resp_preprocessed[i:i+BATCH_SIZE]
+            cur_batch_y = data_y[i:i+BATCH_SIZE]
+            
+            cur_batch_gold_resp_vec = pad_sequences(cur_batch_gold_resp_pp, maxlen=MAX_RESP_LEN, value=0, padding='post', truncating='post')
+            cur_batch_alt_resp_vec = pad_sequences(cur_batch_alt_resp_pp, maxlen=MAX_RESP_LEN, value=0, padding='post', truncating='post')
+            
+            yield [cur_batch_ctxt_tfidfed.todense(), cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
