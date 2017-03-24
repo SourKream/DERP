@@ -171,7 +171,7 @@ if __name__=='__main__':
         precs, recs, thresholds = precision_recall_curve(y, probs)
 
         plt.clf()
-        plt.plot(recall, precision, lw=2, color='navy', label='Precision-Recall curve')
+        plt.plot(recs, precs, lw=2, color='navy', label='Precision-Recall curve')
         plt.xlabel('Recall')
         plt.ylabel('Precision')
         plt.ylim([0.0, 1.05])
