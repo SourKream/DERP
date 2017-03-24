@@ -52,8 +52,7 @@ if __name__=='__main__':
     tfidf_transformer = joblib.load(tfidf_transformer_file)
     
     # preprocessed data loads
-    with open(train_ctxt_tfidfed_file,'r') as f:
-        train_ctxt_tfidfed = cp.load(f)
+    train_ctxt_tfidfed = load_sparse_csr(train_ctxt_tfidfed_file)
     with contextlib.closing(bz2.BZ2File(train_gold_resp_preprocessed_file, 'rb')) as f:
         train_gold_resp_preprocessed = json.load(f)
     with contextlib.closing(bz2.BZ2File(train_alt_resp_preprocessed_file, 'rb')) as f:
@@ -76,7 +75,9 @@ if __name__=='__main__':
     
     # model/callbacks
     model = create_model()
-    checkpointer = ModelCheckpoint(filepath=save_model_path, verbose=1, save_best_only=True)
+    weight_save = WeightSave()
+    weight_save.model_file = save_model_path
+    weight_save.load_model_path = load_model_path
     
     if len(sys.argv) > 1 and sys.argv[1] == 'Test':
         test_routine(model)
@@ -84,4 +85,4 @@ if __name__=='__main__':
     else:    
         # train!
         print('\n==> NOW TRAINING ' + model_name +'\n')
-        model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE/10, epochs=10*10, validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[checkpointer]) 
+        model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE/10, epochs=10*10, validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[weight_save]) 

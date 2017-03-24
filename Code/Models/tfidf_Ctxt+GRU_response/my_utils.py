@@ -3,6 +3,7 @@ from collections import Counter
 from tfidfctxt_gruresp import *
 from config import *
 import numpy as np
+from scipy.sparse import csr_matrix
 import re
 import pdb
 
@@ -11,6 +12,26 @@ tokenizer_exceptions = [u'(amazon\\.com)', u'(google\\.com)', u'(a\\.k\\.a\\.)',
 def my_tokenize(sent):
     return [''.join(x) for x in re.findall("|".join(tokenizer_exceptions)+"|([0-9]+)|('\w{1,2}[^\w])|([\w]+)|([.,!?;'])",sent)]
 
+def load_sparse_csr(filename):
+    # http://stackoverflow.com/questions/8955448/save-load-scipy-sparse-csr-matrix-in-portable-data-format
+    loader = np.load(filename)
+    return csr_matrix((loader['data'], loader['indices'], loader['indptr']), shape = loader['shape'])
+
+class WeightSave(Callback):
+    # for checkpointing models, since there's some issue with the keras code
+    def setModelFile(self, model_file):
+        self.model_file = model_file
+
+    def on_train_begin(self, logs={}):
+        if self.load_model_path:
+            print('LOADING WEIGHTS FROM : ' + self.load_model_path)
+            weights = joblib.load(self.load_model_path)
+            self.model.set_weights(weights)
+
+    def on_epoch_end(self, epochs, logs={}):
+        cur_weights = self.model.get_weights()
+        joblib.dump(cur_weights, self.model_file + '_on_epoch_' + str(epochs) + '.weights')
+                                 
 def map_to_idx(x, vocab):
     return [vocab[w] if w in vocab else vocab['UNK'] for w in x]
 
@@ -104,6 +125,8 @@ def test_routine(model):
     cPickle.dump(pred, f)
 
     from sklearn.metrics import *
+    import matplotlib
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
     accuracy = accuracy_score(y, pred)
