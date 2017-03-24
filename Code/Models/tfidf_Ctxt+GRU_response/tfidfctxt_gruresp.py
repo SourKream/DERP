@@ -1,7 +1,7 @@
 import keras
 from keras.layers import Input, GRU, Embedding, Dense, Dropout
 from keras.models import Model
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import Callback
 from keras.layers.wrappers import Bidirectional
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
