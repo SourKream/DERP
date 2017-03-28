@@ -1,5 +1,5 @@
 import keras
-from keras.layers import Input, GRU, Embedding, Dense, Activation, add, RepeatVector, TimeDistributed, Flatten, Dropout
+from keras.layers import Input, GRU, Embedding, Dense, Dropout
 from keras.models import Model
 from keras.layers.wrappers import Bidirectional
 from keras.callbacks import *
@@ -13,6 +13,9 @@ from configurations import *
 from utils import *
 
 from sklearn.externals import joblib
+from nltk.tokenize import TreebankWordTokenizer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
 import numpy as np
 import pdb
 
@@ -71,51 +74,38 @@ class SingleAttentionLayer(Layer):
         else:
             return None
 
-# def single_attention(ctxt, resp, ctxt_dense, resp_dense, alpha_dense):
-#     pre_alpha = Activation('tanh')(add([RepeatVector(MAX_CTX_LEN)(resp_dense(resp)), TimeDistributed(ctxt_dense)(ctxt)]))
-#     alpha = Activation("softmax")(Flatten()(TimeDistributed(alpha_dense)(pre_alpha)))
-#     alpha = Reshape((MAX_CTX_LEN, 1), input_shape=(MAX_CTX_LEN,))(alpha)
-#     permuted_ctxt = K.permute_dimensions(ctxt, (0,2,1))
-#     return K.T.batched_dot(permuted_ctxt, alpha)
-
 def create_model():
     ctxt = Input(shape=(MAX_CTX_LEN,))
-    gold_resp = Input(shape=(MAX_RESP_LEN,))
     alt_resp = Input(shape=(MAX_RESP_LEN,))
     embedding = Embedding(output_dim=EMBEDDING_DIM, input_dim=VOCAB_SIZE+2, mask_zero=True)   # +1 for 'UNK', +1 for mask (0 can't be used)
     
     ctxt_emb = embedding(ctxt)
-
-
-    gold_resp_emb = embedding(gold_resp)
     alt_resp_emb = embedding(alt_resp)
 
-    ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE, return_sequences = True))
+    if use_attention:
+        ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE, return_sequences = True))
+    else:
+        ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE))
     encoded_ctxt = ctxt_gru(ctxt_emb)
 
-    shared_gru = Bidirectional(GRU(RESP_GRU_HIDDEN_STATE))
-    encoded_gold_resp = shared_gru(gold_resp_emb)
-    encoded_alt_resp = shared_gru(alt_resp_emb)
+    resp_gru = Bidirectional(GRU(RESP_GRU_HIDDEN_STATE))
+    encoded_alt_resp = resp_gru(alt_resp_emb)
 
-    # shared_ctxt_dense = Dense(CTXT_GRU_HIDDEN_STATE)
-    # shared_resp_dense = Dense(CTXT_GRU_HIDDEN_STATE)
-    # shared_alpha_dense = Dense(1)
-    # attended_gold_ctxt = single_attention(encoded_ctxt, encoded_gold_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
-    # attended_alt_ctxt = single_attention(encoded_ctxt, encoded_alt_resp, shared_ctxt_dense, shared_resp_dense, shared_alpha_dense)
-
-    attention_module = SingleAttentionLayer(CTXT_GRU_HIDDEN_STATE, return_att = True)
-    attended_gold_ctxt, gold_alpha = attention_module([encoded_ctxt, encoded_gold_resp])
-    attended_alt_ctxt, ctxt_alpha = attention_module([encoded_ctxt, encoded_alt_resp])
-
-    merged_vector = keras.layers.concatenate([attended_gold_ctxt, attended_alt_ctxt, encoded_gold_resp, encoded_alt_resp], axis=-1)
+    if use_attention:
+        attention_module = SingleAttentionLayer(CTXT_GRU_HIDDEN_STATE, return_att = True)
+        attended_alt_ctxt, ctxt_alpha = attention_module([encoded_ctxt, encoded_alt_resp])
+        merged_vector = keras.layers.concatenate([attended_alt_ctxt, encoded_alt_resp], axis=-1)
+    else:
+        merged_vector = keras.layers.concatenate([encoded_ctxt, encoded_alt_resp], axis=-1)
     if DROPOUT > 0.0:
-        merged_vector = Dropout(DROPOUT)(merged_vector)
+    	merged_vector = Dropout(DROPOUT)(merged_vector)
     merged_vector = Dense(DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
     if DROPOUT > 0.0:
-        merged_vector = Dropout(DROPOUT)(merged_vector)    
+    	merged_vector = Dropout(DROPOUT)(merged_vector)
+
     predictions = Dense(1, activation='sigmoid')(merged_vector)
     
-    model = Model(inputs=[ctxt, gold_resp, alt_resp], outputs=predictions)
+    model = Model(inputs=[ctxt, alt_resp], outputs=predictions)
     adam = Adam(clipnorm=1.)
     model.compile(optimizer=adam,loss='binary_crossentropy',metrics=['accuracy'])
     model.summary()
@@ -149,36 +139,8 @@ if __name__=='__main__':
         model.set_weights(joblib.load(load_model_path))
 
         print 'Testing ...'
-        probs = model.predict_generator(test_gen, steps = len(test_x)/BATCH_SIZE).flatten()
-        y = np.array(test_y)[:len(probs)]
-        pred = np.floor(probs + 0.5)
-        f = open(save_pred_path + 'preds.pkl', 'w')
-        cPickle.dump(y, f)
-        cPickle.dump(probs, f)
-        cPickle.dump(pred, f)
-
-        from sklearn.metrics import *
-        import matplotlib.pyplot as plt
-
-        accuracy = accuracy_score(y, pred)
-        precision, recall, f_score, support = precision_recall_fscore_support(y, pred, average = 'binary')
-        confusion_matrix = confusion_matrix(y, pred)
-        print 'Accuracy: ' + str(accuracy)
-        print 'Precision: ' + str(precision)
-        print 'Recall: ' + str(recall)
-        print 'F-Score: ' + str(f_score)
-        print confusion_matrix
-        precs, recs, thresholds = precision_recall_curve(y, probs)
-
-        plt.clf()
-        plt.plot(recs, precs, lw=2, color='navy', label='Precision-Recall curve')
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.ylim([0.0, 1.05])
-        plt.xlim([0.0, 1.0])
-        plt.title('Precision-Recall Curve')
-        plt.legend(loc = 'lower left')
-        plt.savefig(save_pred_path + 'pr_curve.png')
+        # pdb.set_trace()
+        print model.evaluate_generator(test_gen, steps = len(test_x)/BATCH_SIZE)
 
     else:
         train_x, train_y = load_data(train_file, TRAIN_SIZE)

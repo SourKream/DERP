@@ -68,10 +68,9 @@ def data_generator_raw(data_x, data_y, vocab_dict, count_vect, tfidf_transformer
             cur_batch_x = data_x[i:i+BATCH_SIZE]
             cur_batch_y = data_y[i:i+BATCH_SIZE]
             
-            cur_batch_ctxt, cur_batch_gold_resp, cur_batch_alt_resp = [list(x) for x in zip(*cur_batch_x)]
+            cur_batch_ctxt, _, cur_batch_alt_resp = [list(x) for x in zip(*cur_batch_x)]
             
             for j in range(len(cur_batch_x)):
-                cur_batch_gold_resp[j] = map_to_idx(my_tokenize(cur_batch_gold_resp[j]), vocab_dict)
                 cur_batch_alt_resp[j] = map_to_idx(my_tokenize(cur_batch_alt_resp[j]), vocab_dict)
             
             # tfidf for context
@@ -79,12 +78,11 @@ def data_generator_raw(data_x, data_y, vocab_dict, count_vect, tfidf_transformer
             cur_batch_ctxt = tfidf_transformer.transform(cur_batch_ctxt)
             
             # indices for responses, 0 if nothing
-            cur_batch_gold_resp_vec = pad_sequences(cur_batch_gold_resp, maxlen=MAX_RESP_LEN, value=0, padding='post', truncating='post')
             cur_batch_alt_resp_vec = pad_sequences(cur_batch_alt_resp, maxlen=MAX_RESP_LEN, value=0, padding='post', truncating='post')
             
-            yield [cur_batch_ctxt.todense(), cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
+            yield [cur_batch_ctxt.todense(), cur_batch_alt_resp_vec], np.array(cur_batch_y)
 
-def data_generator_preprocessed(data_ctxt_tfidfed, data_gold_resp_preprocessed, data_alt_resp_preprocessed, data_y):
+def data_generator_preprocessed(data_ctxt_tfidfed, data_alt_resp_preprocessed, data_y):
     """
     data_ctxt_tfidfed : N x len(vocab) sparse vector of count vectorized + tfidf_transformed context 
     data_gold_resp_preprocessed : array of length N where each item is a list of indexes obtained by tokenizing+indexing gold responses
@@ -96,14 +94,12 @@ def data_generator_preprocessed(data_ctxt_tfidfed, data_gold_resp_preprocessed, 
     while True:
         for i in range(0, len(data_y), BATCH_SIZE):
             cur_batch_ctxt_tfidfed = data_ctxt_tfidfed[i:i+BATCH_SIZE]
-            cur_batch_gold_resp_pp = data_gold_resp_preprocessed[i:i+BATCH_SIZE]
             cur_batch_alt_resp_pp = data_alt_resp_preprocessed[i:i+BATCH_SIZE]
             cur_batch_y = data_y[i:i+BATCH_SIZE]
             
-            cur_batch_gold_resp_vec = pad_sequences(cur_batch_gold_resp_pp, maxlen=MAX_RESP_LEN, value=0, padding='post', truncating='post')
             cur_batch_alt_resp_vec = pad_sequences(cur_batch_alt_resp_pp, maxlen=MAX_RESP_LEN, value=0, padding='post', truncating='post')
             
-            yield [cur_batch_ctxt_tfidfed.todense(), cur_batch_gold_resp_vec, cur_batch_alt_resp_vec], np.array(cur_batch_y)
+            yield [cur_batch_ctxt_tfidfed.todense(), cur_batch_alt_resp_vec], np.array(cur_batch_y)
     
             
 def test_routine(model):

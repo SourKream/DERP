@@ -14,23 +14,18 @@ import pdb
 import sys
    
 def create_model():
-    ctxt = Input(shape=(MAX_CTX_LEN,))
     gold_resp = Input(shape=(MAX_RESP_LEN,))
     alt_resp = Input(shape=(MAX_RESP_LEN,))
-    embedding = Embedding(output_dim=EMBEDDING_DIM, input_dim=VOCAB_SIZE+2, mask_zero=True)   # +1 for 'UNK', +1 for mask (0 can't be used)
+    embedding = Embedding(output_dim=EMBEDDING_DIM, input_dim=VOCAB_SIZE+2, input_length=MAX_RESP_LEN, mask_zero=True)   # +1 for 'UNK', +1 for mask (0 can't be used)
     
-    ctxt_emb = embedding(ctxt)
     gold_resp_emb = embedding(gold_resp)
     alt_resp_emb = embedding(alt_resp)
-
-    ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE))
-    encoded_ctxt = ctxt_gru(ctxt_emb)
 
     shared_gru = Bidirectional(GRU(RESP_GRU_HIDDEN_STATE))
     encoded_gold_resp = shared_gru(gold_resp_emb)
     encoded_alt_resp = shared_gru(alt_resp_emb)
     
-    merged_vector = keras.layers.concatenate([encoded_ctxt, encoded_gold_resp, encoded_alt_resp], axis=-1)
+    merged_vector = keras.layers.concatenate([encoded_gold_resp, encoded_alt_resp], axis=-1)
     if DROPOUT > 0.0:
     	merged_vector = Dropout(DROPOUT)(merged_vector)
     merged_vector = Dense(DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
@@ -39,9 +34,8 @@ def create_model():
 
     predictions = Dense(1, activation='sigmoid')(merged_vector)
     
-    model = Model(inputs=[ctxt, gold_resp, alt_resp], outputs=predictions)
-    adam = Adam(clipnorm=1.)
-    model.compile(optimizer=adam,loss='binary_crossentropy',metrics=['accuracy'])
+    model = Model(inputs=[gold_resp, alt_resp], outputs=predictions)
+    model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy'])
     model.summary()
     
     return model
