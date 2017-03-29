@@ -12,6 +12,7 @@ use_attention = True
 # training details
 TRAIN_SIZE = -1    # -1 => train on all
 BATCH_SIZE = 256
+TRAINABLE = True
 
 # hpc file paths
 train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train.txt'

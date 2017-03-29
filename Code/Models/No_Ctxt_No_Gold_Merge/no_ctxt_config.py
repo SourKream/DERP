@@ -11,6 +11,7 @@ DROPOUT = 0.3
 # training details
 TRAIN_SIZE = -1    # -1 => train on all
 BATCH_SIZE = 512
+TRAINABLE = True
 
 # hpc file paths
 train_file = '/scratch/cse/dual/cs5130275/DERP/Reddit/DatasetNewPruned11M/train.txt'
