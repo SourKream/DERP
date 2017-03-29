@@ -16,6 +16,7 @@ from sklearn.externals import joblib
 import numpy as np
 import pdb
 
+import cPickle
 import sys
 
 class SingleAttentionLayer(Layer):
@@ -158,6 +159,8 @@ if __name__=='__main__':
         cPickle.dump(pred, f)
 
         from sklearn.metrics import *
+        import matplotlib
+        matplotlib.use('Agg')
         import matplotlib.pyplot as plt
 
         accuracy = accuracy_score(y, pred)

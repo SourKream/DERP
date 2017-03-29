@@ -10,6 +10,8 @@ import theano
 import theano.tensor as T
 
 from configurations import *
+import no_ctxt_config
+import no_gold_config
 from utils import *
 
 from sklearn.externals import joblib
@@ -19,8 +21,8 @@ from sklearn.feature_extraction.text import TfidfTransformer
 import numpy as np
 import pdb
 
-import cPickle
 import sys
+import cPickle
 
 class SingleAttentionLayer(Layer):
     def __init__(self, dense_dim, return_att = False, **kwargs):
@@ -76,41 +78,79 @@ class SingleAttentionLayer(Layer):
             return None
 
 def create_model():
+
     ctxt = Input(shape=(MAX_CTX_LEN,))
+    gold_resp = Input(shape=(MAX_RESP_LEN,))
     alt_resp = Input(shape=(MAX_RESP_LEN,))
-    embedding = Embedding(output_dim=EMBEDDING_DIM, input_dim=VOCAB_SIZE+2, mask_zero=True)   # +1 for 'UNK', +1 for mask (0 can't be used)
-    
-    ctxt_emb = embedding(ctxt)
-    alt_resp_emb = embedding(alt_resp)
 
-    if use_attention:
-        ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE, return_sequences = True))
-    else:
-        ctxt_gru = Bidirectional(GRU(CTXT_GRU_HIDDEN_STATE))
-    encoded_ctxt = ctxt_gru(ctxt_emb)
+    def create_no_ctxt_model():
 
-    resp_gru = Bidirectional(GRU(RESP_GRU_HIDDEN_STATE))
-    encoded_alt_resp = resp_gru(alt_resp_emb)
+        embedding = Embedding(output_dim=no_ctxt_config.EMBEDDING_DIM, input_dim=VOCAB_SIZE+2, input_length=MAX_RESP_LEN, mask_zero=True)   # +1 for 'UNK', +1 for mask (0 can't be used)
+        
+        gold_resp_emb = embedding(gold_resp)
+        alt_resp_emb = embedding(alt_resp)
 
-    if use_attention:
-        attention_module = SingleAttentionLayer(CTXT_GRU_HIDDEN_STATE, return_att = True)
-        attended_alt_ctxt, ctxt_alpha = attention_module([encoded_ctxt, encoded_alt_resp])
-        merged_vector = keras.layers.concatenate([attended_alt_ctxt, encoded_alt_resp], axis=-1)
-    else:
-        merged_vector = keras.layers.concatenate([encoded_ctxt, encoded_alt_resp], axis=-1)
-    if DROPOUT > 0.0:
-    	merged_vector = Dropout(DROPOUT)(merged_vector)
-    merged_vector = Dense(DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
-    if DROPOUT > 0.0:
-    	merged_vector = Dropout(DROPOUT)(merged_vector)
+        shared_gru = Bidirectional(GRU(no_ctxt_config.RESP_GRU_HIDDEN_STATE))
+        encoded_gold_resp = shared_gru(gold_resp_emb)
+        encoded_alt_resp = shared_gru(alt_resp_emb)
+        
+        merged_vector = keras.layers.concatenate([encoded_gold_resp, encoded_alt_resp], axis=-1)
+        if no_ctxt_config.DROPOUT > 0.0:
+            merged_vector = Dropout(no_ctxt_config.DROPOUT)(merged_vector)
+        merged_vector = Dense(no_ctxt_config.DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
+        if no_ctxt_config.DROPOUT > 0.0:
+            merged_vector = Dropout(no_ctxt_config.DROPOUT)(merged_vector)
 
+        predictions = Dense(1, activation='sigmoid')(merged_vector)
+        
+        model = Model(inputs=[gold_resp, alt_resp], outputs=predictions)
+        model.set_weights(joblib.load(no_ctxt_config.load_model_path))
+
+        return merged_vector
+
+    def create_no_gold_model():
+
+        embedding = Embedding(output_dim=no_gold_config.EMBEDDING_DIM, input_dim=VOCAB_SIZE+2, mask_zero=True)   # +1 for 'UNK', +1 for mask (0 can't be used)
+        
+        ctxt_emb = embedding(ctxt)
+        alt_resp_emb = embedding(alt_resp)
+
+        if no_gold_config.use_attention:
+            ctxt_gru = Bidirectional(GRU(no_gold_config.CTXT_GRU_HIDDEN_STATE, return_sequences = True))
+        else:
+            ctxt_gru = Bidirectional(GRU(no_gold_config.CTXT_GRU_HIDDEN_STATE))
+        encoded_ctxt = ctxt_gru(ctxt_emb)
+
+        resp_gru = Bidirectional(GRU(no_gold_config.RESP_GRU_HIDDEN_STATE))
+        encoded_alt_resp = resp_gru(alt_resp_emb)
+
+        if no_gold_config.use_attention:
+            attention_module = SingleAttentionLayer(no_gold_config.CTXT_GRU_HIDDEN_STATE, return_att = True)
+            attended_alt_ctxt, ctxt_alpha = attention_module([encoded_ctxt, encoded_alt_resp])
+            merged_vector = keras.layers.concatenate([attended_alt_ctxt, encoded_alt_resp], axis=-1)
+        else:
+            merged_vector = keras.layers.concatenate([encoded_ctxt, encoded_alt_resp], axis=-1)
+        if no_gold_config.DROPOUT > 0.0:
+            merged_vector = Dropout(no_gold_config.DROPOUT)(merged_vector)
+        merged_vector = Dense(no_gold_config.DENSE_HIDDEN_STATE, activation='tanh')(merged_vector)
+        if no_gold_config.DROPOUT > 0.0:
+            merged_vector = Dropout(no_gold_config.DROPOUT)(merged_vector)
+
+        predictions = Dense(1, activation='sigmoid')(merged_vector)
+        model = Model(inputs=[ctxt, alt_resp], outputs=predictions)
+        model.set_weights(joblib.load(no_gold_config.load_model_path))
+
+        return merged_vector
+
+    no_ctxt_vector = create_no_ctxt_model()
+    no_gold_vector = create_no_gold_model()
+    merged_vector = keras.layers.concatenate([no_ctxt_vector, no_gold_vector], axis=-1)
     predictions = Dense(1, activation='sigmoid')(merged_vector)
-    
-    model = Model(inputs=[ctxt, alt_resp], outputs=predictions)
+    model = Model(inputs=[ctxt, gold_resp, alt_resp], outputs=predictions)
     adam = Adam(clipnorm=1.)
     model.compile(optimizer=adam,loss='binary_crossentropy',metrics=['accuracy'])
     model.summary()
-    
+
     return model
 
 if __name__=='__main__':
@@ -126,6 +166,7 @@ if __name__=='__main__':
     inv_vocab = {vocab_dict[x]:x for x in vocab_dict}
 
     model = create_model()
+
     weight_save = WeightSave()
     weight_save.model_file = save_model_path
     weight_save.load_model_path = load_model_path
