@@ -1,5 +1,6 @@
 import numpy as np
 
+from keras.layers import GRU
 from keras import backend as K
 from keras.engine import InputSpec
 
@@ -9,22 +10,32 @@ from theano import tensor as T
 class AttentionDecoderGRU(GRU):
 
     def __init__(self, units, attn_dense_dim, return_att = False, **kwargs):
+        super(AttentionDecoderGRU, self).__init__(units, **kwargs)
         self.return_att = return_att
         self.attn_dense_dim = attn_dense_dim
-        super(AttentionDecoderGRU, self).__init__(units, **kwargs)
+        self.input_spec = [InputSpec(ndim=3), InputSpec(ndim=3)]
+        self.state_spec = [InputSpec(shape=(None, self.units)), InputSpec(ndim=2)]
+
 
     def build(self, input_shape):
         self.ctxt_dim = input_shape[1][2]
-        self.hidden_dense = self.add_weight(shape=(self.units, self.attn_dense_dim), initializer='glorot_uniform', trainable=True)
-        self.ctxt_dense = self.add_weight(shape=(self.ctxt_dim, self.attn_dense_dim), initializer='glorot_uniform', trainable=True)
-        self.alpha_dense = self.add_weight(shape=(self.attn_dense_dim, 1), initializer='glorot_uniform', trainable=True)
+        self.hidden_dense = self.add_weight(shape=(self.units, self.attn_dense_dim), 
+                                            initializer='glorot_uniform',
+                                            name = 'hidden_dense')
+        self.ctxt_dense = self.add_weight(shape=(self.ctxt_dim, self.attn_dense_dim), 
+                                          initializer='glorot_uniform', 
+                                          name = 'ctxt_dense')
+        self.alpha_dense = self.add_weight(shape=(self.attn_dense_dim, 1), 
+                                           initializer='glorot_uniform', 
+                                           name = 'alpha_dense')
         
         batch_size = input_shape[0][0] if self.stateful else None
-        self.input_dim = input_shape[0][2] + input_shape[1][2]
+        self.input_dim = input_shape[0][2]
         self.input_spec[0] = InputSpec(shape=(batch_size, None, self.input_dim))
-        self.input_spec.append(InputSpec(shape=(batch_size, None, self.ctxt_dim)))
+        self.input_spec[1] = InputSpec(shape=(batch_size, None, self.ctxt_dim))
+        self.state_spec[1] = InputSpec(shape=(None, self.ctxt_dim))
 
-        self.states = [None]
+        self.states = [None, None]
         if self.stateful:
             self.reset_states()
 
@@ -77,12 +88,22 @@ class AttentionDecoderGRU(GRU):
         self.built = True
 
     def preprocess_input(self, inputs, training = None):
-        return preprocess_input(inputs[0], training)
+        return super(AttentionDecoderGRU, self).preprocess_input(inputs, training)
 
     def get_constants(self, inputs, mask, training = None):
         constants = super(AttentionDecoderGRU, self).get_constants(inputs, training)
         constants.append(inputs[1])
         constants.append(mask[1])
+        return constants
+
+    def get_initial_state(self, inputs):
+        # build an all-zero tensor of shape (samples, output_dim)
+        initial_state = K.zeros_like(inputs)  # (samples, timesteps, input_dim)
+        initial_state = K.sum(initial_state, axis=(1, 2))  # (samples,)
+        initial_state = K.expand_dims(initial_state)  # (samples, 1)
+        initial_state = K.tile(initial_state, [1, self.units])  # (samples, output_dim)
+        initial_state = [initial_state for _ in range(len(self.states))]
+        return initial_state
 
     def call(self, inputs, mask=None, training=None, initial_state=None):
         # input shape: `(samples, time (padded with zeros), input_dim)`
@@ -94,7 +115,11 @@ class AttentionDecoderGRU(GRU):
         elif self.stateful:
             initial_state = self.states
         else:
-            initial_state = self.get_initial_state(inputs)
+            initial_state = self.get_initial_state(inputs[0])
+            initial_state[-1] = K.zeros_like(inputs[1])
+            initial_state[-1] = K.sum(initial_state[-1], axis=(1, 2))  # (samples,)
+            initial_state[-1] = K.expand_dims(initial_state[-1])  # (samples, 1)
+            initial_state[-1] = K.tile(initial_state[-1], [1, self.ctxt_dim])  # (samples, ctxt_dim)
 
         if len(initial_state) != len(self.states):
             raise ValueError('Layer has ' + str(len(self.states)) +
@@ -142,22 +167,23 @@ class AttentionDecoderGRU(GRU):
 
     def step(self, inputs, states):
         h_tm1 = states[0]  # previous memory
+        attended_ctxt = states[1]
         dp_mask = states[2]  # dropout matrices for recurrent units
         rec_dp_mask = states[3]
         ctxt = states[4]
         ctxt_mask = states[5]
 
-        hidden_w = T.dot(h_tm1, self.hidden_dense) # bt_sz x attn_dense_dim
-        ctxt_w = T.dot(ctxt, self.ctxt_dense) # bt_sz x T x attn_dense_dim
-        hidden_w_rep = hidden_w[:,None,:] # bt_sz x T x attn_dense_dim
-        pre_alpha = T.tanh(ctxt_w + hidden_w_rep) # bt_sz x T x attn_dense_dim
-        unnorm_alpha = T.dot(pre_alpha, self.alpha_dense).flatten(2) # bt_sz x T
-        if ctxt_mask:
-            unnorm_alpha_masked = unnorm_alpha - 1000 * (1. - ctxt_mask)
-        else:
-            unnorm_alpha_masked = unnorm_alpha
-        alpha = T.nnet.softmax(unnorm_alpha_masked) # bt_sz x T
-        attended_ctxt = T.batched_dot(alpha.dimshuffle((0,'x',1)), ctxt)[:,0,:] # bt_sz x ctxt_dim
+        # hidden_w = T.dot(h_tm1, self.hidden_dense) # bt_sz x attn_dense_dim
+        # ctxt_w = T.dot(ctxt, self.ctxt_dense) # bt_sz x T x attn_dense_dim
+        # hidden_w_rep = hidden_w[:,None,:] # bt_sz x T x attn_dense_dim
+        # pre_alpha = T.tanh(ctxt_w + hidden_w_rep) # bt_sz x T x attn_dense_dim
+        # unnorm_alpha = T.dot(pre_alpha, self.alpha_dense).flatten(2) # bt_sz x T
+        # if ctxt_mask:
+        #     unnorm_alpha_masked = unnorm_alpha - 1000 * (1. - ctxt_mask)
+        # else:
+        #     unnorm_alpha_masked = unnorm_alpha
+        # alpha = T.nnet.softmax(unnorm_alpha_masked) # bt_sz x T
+        # attended_ctxt = T.batched_dot(alpha.dimshuffle((0,'x',1)), ctxt)[:,0,:] # bt_sz x ctxt_dim
 
         if self.implementation == 2:
             matrix_x = K.dot(inputs * dp_mask[0], self.kernel)
