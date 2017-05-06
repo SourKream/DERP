@@ -64,15 +64,17 @@ def create_model():
 
 if __name__=='__main__':
 
-    # count_vect_vocab = joblib.load(count_vect_vocab_file)
+    count_vect_vocab = joblib.load(count_vect_vocab_file)
     # glove_embedding = np.load(glove_embedding_file)
     # # tfidf_transformer = joblib.load(tfidf_transformer_file)
     
-    # assert(len(count_vect_vocab)==VOCAB_SIZE)
+    assert(len(count_vect_vocab)==VOCAB_SIZE)
     # # count_vect = CountVectorizer(tokenizer=TreebankWordTokenizer().tokenize)
     # # count_vect.vocabulary_ = count_vect_vocab
-    # # vocab_dict = {x:i+1 for i,x in enumerate(count_vect_vocab)}     # +1 since 0 is for masking
-    # vocab_dict['UNK'] = len(vocab_dict)+1
+    vocab_dict = {x:i+1 for i,x in enumerate(count_vect_vocab)}     # +1 since 0 is for masking
+    vocab_dict['UNK'] = len(vocab_dict)+1
+    vocab_dict['<EOU>'] = len(vocab_dict)+1
+    vocab_dict['<BEG>'] = len(vocab_dict)+1
     # inv_vocab = {vocab_dict[x]:x for x in vocab_dict}
 
     model = create_model()
@@ -81,12 +83,12 @@ if __name__=='__main__':
     # weight_save.load_model_path = load_model_path
     
     # else:
-    #     train_x, train_y = load_data(train_file, TRAIN_SIZE)
+    train_x, train_y, train_z = load_data(train_file, TRAIN_SIZE)
     #     val_x, val_y = load_data(val_file, 10000)
 
-    #     train_gen = data_generator(train_x, train_y, vocab_dict)
+    train_gen = data_generator(train_x, train_y, train_z, vocab_dict)
     #     val_gen = data_generator(val_x, val_y, vocab_dict)
 
-    #     # model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE, epochs=10)
+    model.fit_generator(train_gen, steps_per_epoch=len(train_x)/BATCH_SIZE, epochs=10)
     #     if not load_model_path: model.layers[3].set_weights([glove_embedding]) 
     #     model.fit_generator(train_gen, steps_per_epoch=500, epochs=500, validation_data=val_gen, validation_steps=len(val_x)/BATCH_SIZE, callbacks=[weight_save])
