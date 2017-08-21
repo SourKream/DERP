@@ -37,7 +37,7 @@ def get_options(args):
 		# options['TEST'] = options['DATA_DIR'] + 'test.txt'
 
 	# Now the model save path	
-	options['SAVE_DIR'] = "/scratch/cse/btech/cs1130773/DERPData/Models_Clean/DERP/GRU_CTXT_GRU_RESP_ATTN/" 
+	options['SAVE_DIR'] = "/home/bass/DataDir/Models/DERP/GRU_CTXT_GRU_RESP_ATTN/" 
 	options['SAVE_PREFIX'] = options['SAVE_DIR'] 
 	if hasattr(args, 'bad_grammar') and args.bad_grammar:
 		options['SAVE_PREFIX'] += 'model_with_bad_grammar'

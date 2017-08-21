@@ -4,6 +4,8 @@ import pdb
 import sys
 sys.path.append('/home/bass/DERP/Code/DialogueEvaluation')
 from base_utils import *
+import cPickle as cp
+
 
 def generate_X_Y(options,key='TRAIN', num_elem = -1):  
     X = []
@@ -41,9 +43,28 @@ def data_generator(data_x, data_y, options):
     
 def get_best_model(file_prefix, model):
     model_file =  get_best_model_file(file_prefix, "max")
-    if model.endswith('.hdf5'):
+    if model_file.endswith('.hdf5'):
         model.load_weights(model_file, by_name = True)
     else:
-        weights = joblib.load(model_file)
+        weights = cp.load(open(model_file))
         model.set_weights(weights)
     return model
+
+
+def get_probs_from_X_y(model, options, X, y, load_best = False):
+    if load_best:
+        model = get_best_model(options['SAVE_PREFIX'], model)
+    gen_X_y = data_generator(X, y, options)
+    probs = model.predict_generator
+    steps_X = len(X) / options['BATCH_SIZE'] if len(X) % options['BATCH_SIZE'] == 0 else ((len(X) / options['BATCH_SIZE']) ) + 1
+    preds = model.predict_generator(gen_X_y, steps = steps_X, verbose=1).flatten()
+    return preds
+
+def get_probs_from_file(model, options, train_key, train_file = None):
+    if train_file is None:
+        assert train_key in options, 'No %s found in options'%(train_key)
+    else:
+        options[train_key] = train_file
+    X, y = generate_X_Y(options,train_key)
+    return get_probs_from_X_y(model, options, X, y)
+

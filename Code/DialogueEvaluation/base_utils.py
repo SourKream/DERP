@@ -1,6 +1,7 @@
 from keras.preprocessing.sequence import pad_sequences
 from keras.callbacks import *
 from sklearn.externals import joblib
+import cPickle as cp
 from collections import Counter
 import numpy as np
 import os
@@ -158,7 +159,7 @@ class ModelCheckpoint(Callback):
                         if self.save_weights_only:
                             # self.model.save_weights(filepath, overwrite=True)
                             cur_weights = self.model.get_weights()
-                            joblib.dump(cur_weights, filepath)
+                            cp.dump(cur_weights, open(filepath, 'wb'))
                         else:
                             self.model.save(filepath, overwrite=True)
                     else:
@@ -170,7 +171,7 @@ class ModelCheckpoint(Callback):
                     print('Epoch %05d: saving model to %s' % (epoch, filepath))
                 if self.save_weights_only:
                     cur_weights = self.model.get_weights()
-                    joblib.dump(cur_weights, filepath)
+                    cp.dump(cur_weights, open(filepath,'wb'))
                 else:
                     self.model.save(filepath, overwrite=True)
 

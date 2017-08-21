@@ -14,7 +14,7 @@ def get_options():
 	options['DENSE_HIDDEN_STATE'] = 100
 	
 	# Now the vocabulary 
-	options['DATA_DIR'] = '/home/bass/DERPData/'
+	options['DATA_DIR'] = '/home/bass/DataDir/DERPData/'
 	options['VOCAB_PATH'] = options['DATA_DIR'] + 'vocab_50k'
 	options['VOCAB'] = joblib.load(options['VOCAB_PATH'])
 
@@ -22,7 +22,7 @@ def get_options():
 	options['EMBEDDING_DIM'] = 300
 	options['EMBED_PATH'] = options['DATA_DIR'] + 'glove_embedding_vocab50k.npy'
 	options['USE_GLOVE'] = True
-	options['LOWER'] = False
+	options['LOWER'] = True
 	
 	# All models are tested against same test files
 	# 1.1 Reddit internal

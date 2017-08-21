@@ -73,7 +73,7 @@ if __name__ == "__main__":
     if options['LOAD_WEIGHTS']:
         model = get_best_model(options['SAVE_PREFIX'], model)
 
-    filepath = options['SAVE_PREFIX'] + '_{epoch:02d}_{val_acc:.4f}.hdf5'
+    filepath = options['SAVE_PREFIX'] + '_{epoch:02d}_{val_acc:.4f}.weights'
     weight_save = ModelCheckpoint(filepath, monitor='val_acc', save_best_only=True, save_weights_only=True)
     reduce_lr = ReduceLROnPlateau(monitor='val_acc', factor=0.2,
               patience=5, min_lr=options['MIN_LR'])
